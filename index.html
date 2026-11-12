@@ -53,16 +53,17 @@
 
     <!-- PAGE 2 -->
     <section class="page p2" aria-label="News">
-      <article class="card soon">
-        <div class="soon-emoji">📰</div>
-        <h2>News &amp; Trends</h2>
-        <p>Page 2 is next on the build list.</p>
-      </article>
+      <article class="card hero" id="hero"><div class="loading" style="padding:1.4rem">Loading the news…</div></article>
+      <div class="ncols" id="ncols"></div>
     </section>
   </main>
 </div>
 
 <nav id="dots" aria-label="Pages"></nav>
+<button id="reload" aria-label="Refresh">
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+</button>
+<div id="toast" hidden></div>
 <button id="gear" aria-label="Settings">
   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
 </button>
@@ -82,6 +83,11 @@
         <p class="hint">Paste your Google Apps Script web app URL (ends in <code>/exec</code>).</p>
         <div class="row"><input id="calUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" spellcheck="false"><button id="calSave" class="btn">Save</button></div>
         <div class="row"><button id="demoBtn" class="btn ghost"></button><button id="refreshBtn" class="btn ghost">Refresh everything</button></div>
+      </section>
+      <section>
+        <h3>News sections</h3>
+        <p class="hint">From Ground News, refreshed every 30 minutes. Top Stories always shows.</p>
+        <div id="newsToggles" class="toggles"></div>
       </section>
       <section>
         <h3>Display</h3>

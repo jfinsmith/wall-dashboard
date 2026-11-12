@@ -7,7 +7,8 @@ const CITIES = [
   { name: 'Dade City',     lat: 28.3647, lon: -82.1959 },
 ];
 const TZ = 'America/New_York';
-const DEFAULTS = { calUrl: '', hidden: {}, rotateSec: 8, nightDim: true, idleReturn: true, wake: true, demo: false };
+const DEFAULTS = { calUrl: '', hidden: {}, rotateSec: 8, nightDim: true, idleReturn: true, wake: true, demo: false,
+  newsOn: { local: true, politics: true, ai: true, space: false, lightning: false } };
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -15,12 +16,14 @@ function loadJSON(k, d) { try { const v = localStorage.getItem(k); return v ? JS
 function saveJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 
 let S = Object.assign({}, DEFAULTS, loadJSON('wd.settings', {}));
+S.newsOn = Object.assign({}, DEFAULTS.newsOn, S.newsOn);
 const saveSettings = () => saveJSON('wd.settings', S);
 
 const state = {
   wx: loadJSON('wd.wx', null),     // {at, data:[per city]}
   aq: loadJSON('wd.aq', null),     // {at, data:[per city]}
   cal: loadJSON('wd.cal', null),   // {at, calendars, events}
+  news: loadJSON('wd.news', null), newsError: null,
   calError: null, cityIdx: 0,
 };
 
@@ -306,7 +309,7 @@ function fitList(list) {
   let hidden = 0; const more = document.createElement('div'); more.className = 'more'; list.appendChild(more);
   for (let i = items.length - 1; i >= 0 && over(); i--) { items[i].style.display = 'none'; hidden++; more.textContent = `+${hidden} more`; }
 }
-function fitAll() { fitList($('#todayList')); document.querySelectorAll('.dlist').forEach(fitList); }
+function fitAll() { fitList($('#todayList')); document.querySelectorAll('.dlist,.nlist,.hero-more').forEach(fitList); }
 
 /* ---------------- Theme by sun position ---------------- */
 function setTheme() {
@@ -375,7 +378,7 @@ function renderSettings() {
   $('#calUrl').value = S.calUrl; $('#rot').value = S.rotateSec; $('#rotVal').textContent = S.rotateSec;
   $('#dimOn').checked = S.nightDim; $('#idleOn').checked = S.idleReturn; $('#wakeOn').checked = S.wake;
   $('#demoBtn').textContent = S.demo ? 'Turn off sample data' : 'Preview with sample data';
-  renderSettingsCals(); updateWakeState();
+  renderSettingsCals(); renderNewsToggles(); updateWakeState();
 }
 function renderSettingsCals() {
   const src = calSource(), box = $('#calToggles'), hint = $('#calHint');
@@ -398,6 +401,94 @@ $('#dimOn').addEventListener('change', e => { S.nightDim = e.target.checked; sav
 $('#idleOn').addEventListener('change', e => { S.idleReturn = e.target.checked; saveSettings(); });
 $('#wakeOn').addEventListener('change', e => { S.wake = e.target.checked; saveSettings(); wake(); });
 
+/* ---------------- Page 2: News (Ground News, via news.json built every 30 min) ---------------- */
+const NEWS_META = { local: ['📍', 'Tampa Bay & Pasco'], politics: ['🏛️', 'US Politics'], ai: ['🤖', 'AI'], space: ['🚀', 'Space & Launches'], lightning: ['🏒', 'Lightning'] };
+let heroIdx = 0, heroTimer = null;
+function ago(iso) { const m = Math.max(1, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago'; }
+function biasBar(st) {
+  const b = st.bias || {}, tot = (b.left || 0) + (b.center || 0) + (b.right || 0);
+  if (!tot || st.sources < 3) return '';
+  const p = k => (100 * (b[k] || 0) / tot).toFixed(1);
+  return `<span class="bias" title="Left / Center / Right coverage"><i class="l" style="width:${p('left')}%"></i><i class="c" style="width:${p('center')}%"></i><i class="r" style="width:${p('right')}%"></i></span>`;
+}
+function biasLabel(st) {
+  const b = st.bias || {}, tot = (b.left || 0) + (b.center || 0) + (b.right || 0);
+  if (!tot || st.sources < 3) return '';
+  const p = k => Math.round(100 * (b[k] || 0) / tot);
+  return `<span class="blab"><b class="bl">L ${p('left')}%</b> · C ${p('center')}% · <b class="br">R ${p('right')}%</b></span>`;
+}
+const srcTxt = n => n + (n === 1 ? ' source' : ' sources');
+function newsSection(key) { return state.news?.sections?.find(s => s.key === key); }
+
+function renderHero() {
+  const top = newsSection('top')?.stories || [], el = $('#hero');
+  if (!top.length) { el.innerHTML = `<div class="empty"><div class="big">📰</div><div>${state.newsError ? 'Couldn’t load the news.' : 'Loading the news…'}</div></div>`; return; }
+  const feat = Math.min(6, top.length); heroIdx %= feat;
+  const st = top[heroIdx];
+  const others = top.filter((_, i) => i !== heroIdx).slice(0, 8);
+  el.innerHTML = `
+    <div class="hero-img">${st.image ? `<img src="${esc(st.image)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+      <span class="kick">Top story ${heroIdx + 1}/${feat}</span><h1>${esc(st.title)}</h1></div>
+    <div class="hero-body">
+      ${st.summary ? `<p class="hero-sum">${esc(st.summary)}</p>` : ''}
+      <div class="hero-meta">${biasBar(st)}${biasLabel(st)}<span>${srcTxt(st.sources)} · ${ago(st.start)}</span></div>
+      <div class="hero-more">${others.map((o, i) => `<a class="hm" href="${esc(o.url)}" target="_blank" rel="noopener"><span class="n">${i + 1}</span><span class="t">${esc(o.title)}</span><span class="s">${o.sources} src</span></a>`).join('')}</div>
+    </div>
+    <span class="news-foot">Ground News · updated ${tShort(new Date(state.news.generated))}</span>`;
+  el.onclick = e => { if (!e.target.closest('a')) window.open(st.url, '_blank', 'noopener'); };
+  el.querySelectorAll('.hm').forEach(a => a.style.color = 'inherit');
+  requestAnimationFrame(() => fitList(el.querySelector('.hero-more')));
+}
+function renderNews() {
+  renderHero();
+  const keys = Object.keys(NEWS_META).filter(k => S.newsOn[k] && newsSection(k));
+  const box = $('#ncols'); box.classList.toggle('two-rows', keys.length > 3);
+  box.style.gridAutoFlow = keys.length > 3 ? 'column' : 'column';
+  box.innerHTML = keys.map(k => {
+    const [em, label] = NEWS_META[k], sts = newsSection(k).stories;
+    return `<article class="card ncol"><header><span class="em">${em}</span><h2>${label}</h2></header><div class="nlist">${sts.length ? sts.map((st, i) =>
+      `<a class="ni" href="${esc(st.url)}" target="_blank" rel="noopener">${i === 0 && st.image && keys.length <= 3 ? `<img src="${esc(st.image)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+        <span class="t">${esc(st.title)}</span><span class="m">${biasBar(st)}${srcTxt(st.sources)} · ${ago(st.start)}</span></a>`).join('')
+      : '<div class="empty">Nothing new right now.</div>'}</div></article>`;
+  }).join('');
+  requestAnimationFrame(() => document.querySelectorAll('.nlist').forEach(fitList));
+}
+async function fetchNews() {
+  try {
+    const r = await fetch('news.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) throw new Error(r.status);
+    state.news = await r.json(); state.newsError = null; saveJSON('wd.news', state.news);
+  } catch (e) { state.newsError = String(e); }
+  renderNews();
+}
+function startHero() { clearInterval(heroTimer); heroTimer = setInterval(() => { heroIdx++; renderHero(); }, 15000); }
+function renderNewsToggles() {
+  $('#newsToggles').innerHTML = Object.entries(NEWS_META).map(([k, [em, label]]) =>
+    `<label class="tog${S.newsOn[k] ? '' : ' off'}"><span>${em}</span><span class="cn">${label}</span><input type="checkbox" data-news="${k}"${S.newsOn[k] ? ' checked' : ''}><span class="sw2"></span></label>`).join('');
+}
+$('#newsToggles').addEventListener('change', e => {
+  const k = e.target.dataset.news; if (!k) return;
+  S.newsOn[k] = e.target.checked; saveSettings(); e.target.closest('.tog').classList.toggle('off', !e.target.checked); renderNews();
+});
+
+/* ---------------- Refresh button + automatic updates ---------------- */
+let bootVersion = null;
+function toast(msg, ms = 2500) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms); }
+async function checkForUpdate() {
+  try {
+    const r = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return false;
+    const { v } = await r.json();
+    if (!bootVersion) { bootVersion = v; return false; }
+    if (v && v !== bootVersion) { toast('✨ Update found, reloading…'); setTimeout(() => location.reload(), 1200); return true; }
+  } catch {}
+  return false;
+}
+$('#reload').addEventListener('click', async () => {
+  const b = $('#reload'); b.classList.add('spin');
+  if (await checkForUpdate()) return;
+  lastRefresh = 0; await Promise.allSettled([fetchWeather(), fetchAir(), fetchCal(), fetchNews()]); lastRefresh = Date.now();
+  b.classList.remove('spin'); toast('Everything’s up to date ✓');
+});
+
 /* ---------------- Boot & schedules ---------------- */
 let lastMinute = -1, lastDay = new Date().getDate();
 function tick() {
@@ -410,10 +501,12 @@ function tick() {
   }
 }
 let lastRefresh = 0;
-function refreshAll() { if (Date.now() - lastRefresh < 60000) return; lastRefresh = Date.now(); fetchWeather(); fetchAir(); fetchCal(); }
+function refreshAll() { if (Date.now() - lastRefresh < 60000) return; lastRefresh = Date.now(); fetchWeather(); fetchAir(); fetchCal(); fetchNews(); }
 
-setTheme(); renderClock(); renderWx(); renderTown(); renderCal(); updateDots();
-refreshAll(); startRotation(); applyDim(); wake();
+setTheme(); renderClock(); renderWx(); renderTown(); renderCal(); renderNews(); updateDots();
+refreshAll(); startRotation(); startHero(); applyDim(); wake(); checkForUpdate();
+setInterval(fetchNews, 10 * 60000);
+setInterval(checkForUpdate, 5 * 60000);
 setInterval(tick, 1000);
 setInterval(fetchWeather, 15 * 60000);
 setInterval(fetchAir, 30 * 60000);
@@ -423,3 +516,4 @@ window.addEventListener('resize', () => requestAnimationFrame(fitAll));
 document.fonts?.ready.then(fitAll);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (/[?&]page=2\b/.test(location.search)) requestAnimationFrame(() => { pager.scrollLeft = pager.clientWidth; updateDots(); });
