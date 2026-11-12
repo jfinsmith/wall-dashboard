@@ -192,8 +192,8 @@ function renderClock() {
   const timed = [...eventsOn(all, today), ...eventsOn(all, addDays(today, 1))].filter(e => !e.allDay && !e.cont);
   const cur = timed.find(e => e.s <= now && e.en > now), nxt = timed.find(e => e.s > now);
   let html = '';
-  if (cur) html = `<i class="live"></i><span class="lbl">Now</span><b>${esc(cur.title)}</b><span class="when">until ${tShort(cur.en)}</span>`;
-  else if (nxt) html = `<i class="soon"></i><span class="lbl">Next</span><b>${esc(nxt.title)}</b><span class="when">${nxt.s - now < 6 * 3600000 ? 'in ' + relDur(nxt.s - now) : (startOfDay(nxt.s) > today ? 'tmrw ' : '') + tShort(nxt.s)}</span>`;
+  if (cur) html = `<i class="dot-now"></i><span class="lbl">Now</span><b>${esc(cur.title)}</b><span class="when">until ${tShort(cur.en)}</span>`;
+  else if (nxt) html = `<i class="dot-next"></i><span class="lbl">Next</span><b>${esc(nxt.title)}</b><span class="when">${nxt.s - now < 6 * 3600000 ? 'in ' + relDur(nxt.s - now) : (startOfDay(nxt.s) > today ? 'tmrw ' : '') + tShort(nxt.s)}</span>`;
   $('#nextup').innerHTML = html;
   $('#holis').innerHTML = upcomingHolidays(today, 2).map(x => x.days === 0
     ? `<span class="holi now">${x.e} Happy ${esc(x.name)}!</span>`
