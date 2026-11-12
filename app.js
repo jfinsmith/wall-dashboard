@@ -516,4 +516,4 @@ window.addEventListener('resize', () => requestAnimationFrame(fitAll));
 document.fonts?.ready.then(fitAll);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-if (/[?&]page=2\b/.test(location.search)) requestAnimationFrame(() => { pager.scrollLeft = pager.clientWidth; updateDots(); });
+{ const pg = +(location.search.match(/[?&]page=(\d)/) || [])[1]; if (pg > 1) requestAnimationFrame(() => { pager.scrollLeft = (pg - 1) * pager.clientWidth; updateDots(); }); }

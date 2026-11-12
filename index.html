@@ -51,8 +51,27 @@
       <div class="days" id="days"></div>
     </section>
 
-    <!-- PAGE 2 -->
-    <section class="page p2" aria-label="News">
+    <!-- PAGE 2: Home (Home Assistant) -->
+    <section class="page ph" aria-label="Home">
+      <aside class="card side">
+        <div class="time"><span id="hHm">--:--</span><span class="ampm" id="hAmpm"></span></div>
+        <div class="side-date" id="hDate"></div>
+        <div class="side-greet" id="hGreet"></div>
+        <div class="side-wx" id="hWx"></div>
+        <div class="side-sum" id="hSum"></div>
+        <div class="side-next" id="hNext"></div>
+      </aside>
+      <div class="home" id="home">
+        <section class="hs cams"><h3>Cameras</h3><div class="cam" id="cam"></div></section>
+        <section class="hs climate"><h3>Climate</h3><div class="tiles" id="climate"></div></section>
+        <section class="hs doors"><h3>Doors</h3><div class="tiles" id="doors"></div></section>
+        <section class="hs lights"><h3>Lights <span class="cnt" id="lightsOn"></span></h3><div class="tiles" id="lights"></div></section>
+        <div class="ha-banner" id="haBanner" hidden></div>
+      </div>
+    </section>
+
+    <!-- PAGE 3: News -->
+    <section class="page p3" aria-label="News">
       <article class="card hero" id="hero"><div class="loading" style="padding:1.4rem">Loading the news…</div></article>
       <div class="ncols" id="ncols"></div>
     </section>
@@ -85,6 +104,16 @@
         <div class="row"><button id="demoBtn" class="btn ghost"></button><button id="refreshBtn" class="btn ghost">Refresh everything</button></div>
       </section>
       <section>
+        <h3>Home Assistant</h3>
+        <p class="hint">Your Home Assistant address (must start with <code>https://</code>) and a long-lived access token from your HA profile page.</p>
+        <div class="row"><input id="haUrl" type="url" placeholder="https://xxxxxxxx.ui.nabu.casa" autocomplete="off" spellcheck="false"></div>
+        <div class="row"><input id="haToken" type="password" placeholder="Long-lived access token" autocomplete="off" spellcheck="false"><button id="haSave" class="btn">Connect</button></div>
+        <p class="hint" id="haState" style="margin-top:.6rem"></p>
+        <label class="line">Switch camera every <b id="camVal"></b> s<input id="camSec" type="range" min="5" max="30" step="1"></label>
+        <p class="hint">Choose which devices show on the Home page:</p>
+        <div id="haToggles"></div>
+      </section>
+      <section>
         <h3>News sections</h3>
         <p class="hint">From Ground News, refreshed every 30 minutes. Top Stories always shows.</p>
         <div id="newsToggles" class="toggles"></div>
@@ -102,5 +131,6 @@
 </div>
 
 <script src="app.js"></script>
+<script src="home.js"></script>
 </body>
 </html>
