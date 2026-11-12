@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Home Dashboard</title>
+<meta name="theme-color" content="#1e1b4b">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-tod="night">
+<div class="sky" aria-hidden="true"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i></div>
+
+<div id="app">
+  <main id="pager">
+    <!-- PAGE 1 -->
+    <section class="page p1" aria-label="Home">
+      <article class="card clock" id="clock">
+        <div class="greet" id="greet">Hello</div>
+        <div class="time"><span id="hm">--:--</span><span class="ampm" id="ampm"></span></div>
+        <div class="date" id="date"></div>
+        <div class="nextup" id="nextup"></div>
+        <div class="holis" id="holis"></div>
+      </article>
+
+      <article class="card wx" id="wx">
+        <div class="wx-body" id="wxBody"><div class="loading">Fetching the forecast…</div></div>
+        <div class="wx-progress"><i id="wxProg"></i></div>
+      </article>
+
+      <article class="card town" id="town">
+        <h2>Around town</h2>
+        <div class="town-rows" id="townRows"></div>
+        <div class="sunmoon" id="sunmoon"></div>
+      </article>
+
+      <article class="card today" id="today">
+        <header>
+          <div><h2>Today</h2><div class="sub" id="todayDate"></div></div>
+          <div class="today-count" id="todayCount"></div>
+        </header>
+        <div class="today-list" id="todayList"></div>
+      </article>
+
+      <div class="days" id="days"></div>
+    </section>
+
+    <!-- PAGE 2 -->
+    <section class="page p2" aria-label="News">
+      <article class="card soon">
+        <div class="soon-emoji">📰</div>
+        <h2>News &amp; Trends</h2>
+        <p>Page 2 is next on the build list.</p>
+      </article>
+    </section>
+  </main>
+</div>
+
+<nav id="dots" aria-label="Pages"></nav>
+<button id="gear" aria-label="Settings">
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+</button>
+<div id="dim" aria-hidden="true"></div>
+
+<div id="settings" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-label="Settings">
+    <header><h2>Settings</h2><button class="x" data-close aria-label="Close">✕</button></header>
+    <div class="sheet-body">
+      <section>
+        <h3>Calendars</h3>
+        <p class="hint" id="calHint"></p>
+        <div id="calToggles" class="toggles"></div>
+      </section>
+      <section>
+        <h3>Calendar connection</h3>
+        <p class="hint">Paste your Google Apps Script web app URL (ends in <code>/exec</code>).</p>
+        <div class="row"><input id="calUrl" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" spellcheck="false"><button id="calSave" class="btn">Save</button></div>
+        <div class="row"><button id="demoBtn" class="btn ghost"></button><button id="refreshBtn" class="btn ghost">Refresh everything</button></div>
+      </section>
+      <section>
+        <h3>Display</h3>
+        <label class="line">Rotate weather every <b id="rotVal"></b> s<input id="rot" type="range" min="5" max="15" step="1"></label>
+        <label class="line sw"><span>Dim at night (11 PM – 6 AM)</span><input id="dimOn" type="checkbox"><i></i></label>
+        <label class="line sw"><span>Return to page 1 after 3 min idle</span><input id="idleOn" type="checkbox"><i></i></label>
+        <label class="line sw"><span>Keep screen awake</span><input id="wakeOn" type="checkbox"><i></i></label>
+        <p class="hint" id="wakeState"></p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
