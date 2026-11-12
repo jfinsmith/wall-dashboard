@@ -122,7 +122,7 @@ async function fetchAir() {
 async function fetchCal() {
   if (!S.demo && S.calUrl) {
     try {
-      const u = S.calUrl + (S.calUrl.includes('?') ? '&' : '?') + 'days=16&t=' + Date.now();
+      const u = S.calUrl + (S.calUrl.includes('?') ? '&' : '?') + 'days=16&back=7&t=' + Date.now();
       const r = await fetch(u);
       const txt = await r.text(); let j;
       try { j = JSON.parse(txt); } catch { throw new Error('The script did not return calendar data. Check it is deployed with access set to “Anyone”.'); }
@@ -154,7 +154,7 @@ function demoCal() {
       ev('fam', 'Pancake breakfast', 4, 9, 0, 60), ev('me', 'Book club', 6, 19, 0, 90), ev('fam', 'Soccer practice', 7, 17, 30, 90),
       ev('me', 'Vet appointment', 8, 10, 30, 30), ad('hol', 'Thanksgiving', 15), ev('me', 'Grocery pickup', 9, 16, 0, 30),
       ev('fam', 'Movie night', 10, 19, 30, 150), ev('me', 'Car wash', 11, 10, 0, 30), ev('fam', 'Soccer game', 12, 9, 0, 90, 'Rec fields'),
-      ev('me', 'Coffee w/ Alex', 13, 8, 30, 60), ad('fam', 'School half day', 14),
+      ev('me', 'Coffee w/ Alex', 13, 8, 30, 60), ad('fam', 'School half day', 14), ev('me', 'Gym', -1, 7, 0, 60), ad('fam', 'Pay day', -2), ev('fam', 'Soccer practice', -2, 17, 30, 90),
     ],
   };
   demoCache = { key, data }; return data;
@@ -186,22 +186,20 @@ function renderClock() {
   const now = new Date(), h = now.getHours();
   $('#hm').textContent = (h % 12 || 12) + ':' + String(now.getMinutes()).padStart(2, '0');
   $('#ampm').textContent = h < 12 ? 'AM' : 'PM';
-  $('#date').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-  $('#greet').textContent = h < 5 ? '🌙 Hey, night owl' : h < 12 ? '☀️ Good morning' : h < 17 ? '🌤️ Good afternoon' : h < 21 ? '🌆 Good evening' : '🌙 Good night';
-  // next up
+  $('#date').textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  $('#greet').textContent = h < 5 ? 'Hey, night owl' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : h < 21 ? 'Good evening' : 'Good night';
   const all = events(), today = startOfDay(now);
   const timed = [...eventsOn(all, today), ...eventsOn(all, addDays(today, 1))].filter(e => !e.allDay && !e.cont);
   const cur = timed.find(e => e.s <= now && e.en > now), nxt = timed.find(e => e.s > now);
   let html = '';
-  if (cur) html = `🔴 Now: <b>${esc(cur.title)}</b> · until ${tShort(cur.en)}`;
-  else if (nxt) html = `⏭️ Next: <b>${esc(nxt.title)}</b> · ${nxt.s - now < 6 * 3600000 ? 'in ' + relDur(nxt.s - now) : (startOfDay(nxt.s) > today ? 'tomorrow ' : '') + tShort(nxt.s)}`;
-  else if (calSource()) html = '✨ Nothing else on the calendar today';
+  if (cur) html = `<i class="live"></i><span class="lbl">Now</span><b>${esc(cur.title)}</b><span class="when">until ${tShort(cur.en)}</span>`;
+  else if (nxt) html = `<i class="soon"></i><span class="lbl">Next</span><b>${esc(nxt.title)}</b><span class="when">${nxt.s - now < 6 * 3600000 ? 'in ' + relDur(nxt.s - now) : (startOfDay(nxt.s) > today ? 'tmrw ' : '') + tShort(nxt.s)}</span>`;
   $('#nextup').innerHTML = html;
-  // holiday countdowns
   $('#holis').innerHTML = upcomingHolidays(today, 2).map(x => x.days === 0
     ? `<span class="holi now">${x.e} Happy ${esc(x.name)}!</span>`
-    : `<span class="holi">${x.e} ${esc(x.name)} · ${x.days === 1 ? 'tomorrow' : x.days + 'd'}</span>`).join('');
+    : `<span class="holi">${x.e} ${esc(x.name)} <em>${x.days === 1 ? 'tomorrow' : x.days + ' days'}</em></span>`).join('');
 }
+
 
 function renderWx() {
   const box = $('#wxBody'), d = state.wx?.data?.[state.cityIdx];
@@ -209,47 +207,48 @@ function renderWx() {
   const c = d.current, dl = d.daily, city = CITIES[state.cityIdx];
   const [, label] = wxKind(c.weather_code);
   const cond = c.weather_code === 0 ? (c.is_day ? 'Sunny' : 'Clear') : label;
-  const rain = dl.precipitation_probability_max[0];
-    const daysHtml = dl.time.slice(0, 6).map((t, i) => {
-    const dt = ymd(t), pp = dl.precipitation_probability_max[i];
+  const uv = Math.round(c.uv_index ?? dl.uv_index_max[0]);
+  const daysHtml = dl.time.slice(0, 6).map((t, i) => {
+    const dt = ymd(t), pp = dl.precipitation_probability_max[i] ?? 0;
     return `<div class="wd${i === 0 ? ' first' : ''}"><div class="dn">${i === 0 ? 'Today' : DOW[dt.getDay()]}</div>${icon(dl.weather_code[i], 1)}
-      <div class="hi">${Math.round(dl.temperature_2m_max[i])}°</div><div class="lo">${Math.round(dl.temperature_2m_min[i])}°</div>
-      <div class="pp${pp < 20 ? ' dry' : ''}">☔${pp ?? 0}%</div></div>`;
+      <div class="hl"><span class="hi">${Math.round(dl.temperature_2m_max[i])}°</span><span class="lo">${Math.round(dl.temperature_2m_min[i])}°</span></div>
+      <div class="pp${pp < 20 ? ' dry' : ''}">${pp}%</div></div>`;
   }).join('');
   box.innerHTML = `
     <div class="wx-now">
-      <div class="wx-city"><span class="pin">📍</span>${esc(city.name)}<span class="cdots">${CITIES.map((_, i) => `<i class="${i === state.cityIdx ? 'on' : ''}"></i>`).join('')}</span></div>
+      <div class="wx-city">${esc(city.name)}<span class="cdots">${CITIES.map((_, i) => `<i class="${i === state.cityIdx ? 'on' : ''}"></i>`).join('')}</span></div>
       <div class="wx-main">${icon(c.weather_code, c.is_day)}
-        <div><div class="wx-temp">${Math.round(c.temperature_2m)}<sup>°F</sup></div>
+        <div><div class="wx-temp">${Math.round(c.temperature_2m)}<sup>°</sup></div>
         <div class="wx-cond">${esc(cond)}</div>
         <div class="wx-feel">Feels ${Math.round(c.apparent_temperature)}° · H ${Math.round(dl.temperature_2m_max[0])}° L ${Math.round(dl.temperature_2m_min[0])}°</div></div>
       </div>
-      <div class="chips">
-        <span class="chip">💨 <b>${Math.round(c.wind_speed_10m)}</b> mph ${compass(c.wind_direction_10m)}</span>
-        <span class="chip">💧 <b>${c.relative_humidity_2m}%</b></span>
-        <span class="chip">☔ <b>${rain ?? 0}%</b></span>
-        <span class="chip">😎 UV <b>${Math.round(c.uv_index ?? dl.uv_index_max[0])}</b></span>
+      <div class="stats">
+        <div><span>Wind</span><b>${Math.round(c.wind_speed_10m)}<small> mph ${compass(c.wind_direction_10m)}</small></b></div>
+        <div><span>Humidity</span><b>${c.relative_humidity_2m}<small>%</small></b></div>
+        <div><span>Rain</span><b>${dl.precipitation_probability_max[0] ?? 0}<small>%</small></b></div>
+        <div><span>UV</span><b>${uv}<small> ${uvInfo(uv)[0]}</small></b></div>
       </div>
     </div>
     <div class="wx-days">${daysHtml}</div>`;
 }
+
 
 function renderTown() {
   const wx = state.wx?.data; if (!wx) return;
   $('#townRows').innerHTML = CITIES.map((city, i) => {
     const c = wx[i]?.current; if (!c) return '';
     const aqi = state.aq?.data?.[i]?.current?.us_aqi;
-    const [aL, aC] = aqiInfo(aqi); const uv = c.uv_index ?? wx[i].daily.uv_index_max[0]; const [, uC] = uvInfo(uv);
+    const [aL, aC] = aqiInfo(aqi); const uv = Math.round(c.uv_index ?? wx[i].daily.uv_index_max[0]); const [, uC] = uvInfo(uv);
     const w = Math.round(wbgtF(c.temperature_2m, c.relative_humidity_2m));
-    return `<div class="tr${i === state.cityIdx ? ' on' : ''}"><div class="nm">${esc(city.name)}</div>
+    return `<div class="tr${i === state.cityIdx ? ' on' : ''}">
+      <div class="nm">${esc(city.name)}</div>
       <div class="t">${icon(c.weather_code, c.is_day)}${Math.round(c.temperature_2m)}°</div>
-      <div class="meta"><span class="pill" style="background:${aC}">AQI ${aqi ?? '—'} ${aL === 'Good' || aL === 'Moderate' ? '' : esc(aL)}</span>
-      <span class="pill" style="background:${uC}">UV ${Math.round(uv ?? 0)}</span>
-      <span class="pill soft" title="Estimated WBGT (shade)">WBGT ~${w}°</span></div></div>`;
+      <div class="meta"><span><i style="background:${aC}"></i>AQI <b>${aqi ?? '—'}</b></span><span><i style="background:${uC}"></i>UV <b>${uv}</b></span><span title="Estimated WBGT (shade)">WBGT <b>${w}°</b></span></div></div>`;
   }).join('');
   const dl = wx[0].daily, sr = new Date(dl.sunrise[0]), ss = new Date(dl.sunset[0]), [me, mn] = moon(Date.now());
-  $('#sunmoon').innerHTML = `<span>🌅 <b>${tShort(sr)}</b></span><span>🌇 <b>${tShort(ss)}</b></span><span>${me} ${mn}</span>`;
+  $('#sunmoon').innerHTML = `<span>Sunrise <b>${tShort(sr)}</b></span><span>Sunset <b>${tShort(ss)}</b></span><span>${me} ${mn}</span>`;
 }
+
 
 function renderCal() {
   renderToday(); renderDays(); renderClock();
@@ -258,7 +257,7 @@ function renderCal() {
 
 function renderToday() {
   const now = new Date(), today = startOfDay(now);
-  $('#todayDate').textContent = today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  $('#todayDate').textContent = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const list = $('#todayList'), cnt = $('#todayCount'), src = calSource();
   if (!src) {
     cnt.textContent = '';
@@ -268,28 +267,31 @@ function renderToday() {
     return;
   }
   const evs = eventsOn(events(), today);
-  cnt.textContent = state.calError ? '⚠️ offline' : evs.length ? `${evs.length} event${evs.length > 1 ? 's' : ''}` : '';
-  if (!evs.length) { list.innerHTML = `<div class="empty"><div class="big">🌴</div><div><b>Nothing scheduled!</b></div><div>Enjoy the free day.</div></div>`; return; }
+  cnt.textContent = state.calError ? 'offline' : evs.length ? String(evs.length) : '';
+  if (!evs.length) { list.innerHTML = `<div class="empty"><div class="big">🌴</div><div><b>Nothing scheduled</b></div><div>Enjoy the free day.</div></div>`; return; }
   list.innerHTML = evs.map(e => {
-    if (e.allDay || e.cont) return `<div class="ad" style="background:${e.color};color:${textOn(e.color)}">${esc(e.title)}</div>`;
+    if (e.allDay || e.cont) return `<div class="ad" style="--c:${e.color}">${esc(e.title)}</div>`;
     const [t, ap] = tParts(e.s), past = e.en <= now, live = e.s <= now && e.en > now;
     return `<div class="tev${past ? ' past' : ''}${live ? ' now' : ''}"><div class="tt">${t}<small>${ap}</small></div><div class="bar" style="background:${e.color}"></div>
-      <div class="tb"><div class="ttl">${esc(e.title)}</div><div class="loc">${e.location ? '📍 ' + esc(e.location.split(',')[0]) + ' · ' : ''}until ${tShort(e.en)}</div></div></div>`;
+      <div class="tb"><div class="ttl">${esc(e.title)}</div><div class="loc">${live ? '<span class="nowtag">Now</span>' : ''}until ${tShort(e.en)}${e.location ? ' · ' + esc(e.location.split(',')[0]) : ''}</div></div></div>`;
   }).join('');
 }
 
 function renderDays() {
-  const today = startOfDay(new Date()), all = events(), src = calSource();
+  // Always Monday → Sunday: this week on top, next week below.
+  const now = new Date(), today = startOfDay(now), all = events(), src = calSource();
+  const monday = addDays(today, -((today.getDay() + 6) % 7));
   let html = '';
-  for (let i = 1; i <= 14; i++) {
-    const d = addDays(today, i), wk = d.getDay() === 0 || d.getDay() === 6;
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(monday, i), wk = d.getDay() === 0 || d.getDay() === 6;
+    const isToday = +d === +today, past = d < today;
     const evs = src ? eventsOn(all, d) : [];
     const items = evs.map(e => (e.allDay || e.cont)
-      ? `<div class="dad" style="background:${e.color};color:${textOn(e.color)}">${esc(e.title)}</div>`
-      : `<div class="dev"><i class="dot" style="background:${e.color}"></i><span class="tm">${tShort(e.s)}</span><span class="nm">${esc(e.title)}</span></div>`).join('');
-    html += `<article class="card day${wk ? ' wkend' : ''}${i === 1 ? ' tomorrow' : ''}">
-      <header><span class="dow">${i === 1 ? 'TMRW' : DOW[d.getDay()].toUpperCase()}</span>${i === 1 || d.getDate() === 1 ? `<span class="mon">${MON[d.getMonth()]}</span>` : ''}<span class="dnum">${d.getDate()}</span></header>
-      <div class="dlist">${items || ''}</div></article>`;
+      ? `<div class="dad" style="--c:${e.color}">${esc(e.title)}</div>`
+      : `<div class="dev${isToday && e.en <= now ? ' done' : ''}"><i class="dot" style="background:${e.color}"></i><span class="tm">${tShort(e.s)}</span><span class="nm">${esc(e.title)}</span></div>`).join('');
+    html += `<article class="card day${wk ? ' wkend' : ''}${isToday ? ' is-today' : ''}${past ? ' past' : ''}">
+      <header><span class="dow">${DOW[d.getDay()]}</span><span class="dnum">${d.getDate()}</span></header>
+      <div class="dlist">${items}</div></article>`;
   }
   $('#days').innerHTML = html;
 }

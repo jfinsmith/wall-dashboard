@@ -7,11 +7,14 @@
  *        type "Web app", Execute as "Me", Who has access "Anyone" → Deploy → copy the /exec URL.
  */
 function doGet(e) {
-  var days = Math.min(Number((e && e.parameter && e.parameter.days) || 16), 60);
+  var p = (e && e.parameter) || {};
+  var days = Math.min(Number(p.days || 16), 60);   // days ahead
+  var back = Math.min(Number(p.back || 0), 31);    // days back (earlier this week)
   var tz = Session.getScriptTimeZone();
   var now = new Date();
-  var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  var end = new Date(start.getTime() + days * 86400000);
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var start = new Date(today.getTime() - back * 86400000);
+  var end = new Date(today.getTime() + days * 86400000);
   var out = { calendars: [], events: [], tz: tz, generated: now.toISOString() };
 
   CalendarApp.getAllCalendars().forEach(function (c) {
