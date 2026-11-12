@@ -223,7 +223,7 @@ body[data-tod="night"] .blob{opacity:.34}
 .thermo.heat .ico{background:#fb923c}.thermo.cool .ico{background:#38bdf8}
 .climate .tiles{grid-template-columns:repeat(auto-fill,minmax(13rem,1fr))}
 .cam{position:relative;width:100%;aspect-ratio:16/9;max-height:100%;border-radius:1.2rem;overflow:hidden;background:#0b0a1e;border:1px solid var(--line)}
-.cam img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .6s}
+.cam img,.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity .6s}
 .cam .ph-img{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:1rem;text-align:center;padding:1rem}
 .cam .ov{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:.7rem;padding:2.2rem 1rem .8rem;background:linear-gradient(180deg,transparent,rgba(5,4,20,.8))}
 .cam .ov .ico{width:2.2rem;height:2.2rem;border-radius:.6rem;display:grid;place-items:center;background:rgba(255,255,255,.18)}
@@ -329,3 +329,9 @@ body[data-tod="night"] .blob{opacity:.34}
 .sw input:checked+i,.tog input:checked~.sw2{background:#22c55e}
 .sw input:checked+i::after,.tog input:checked~.sw2::after{transform:translateX(1.4rem)}
 .hm{color:inherit;text-decoration:none}
+
+/* Nest only (no Home Assistant): cameras + climate fill the page */
+.home.nest-only{grid-template-areas:"cams" "climate";grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+.home.nest-only .doors,.home.nest-only .lights{display:none}
+.home.nest-only .cam{width:auto;height:100%;max-width:100%;margin:0 auto}
+.home.nest-only .cams{align-items:stretch}

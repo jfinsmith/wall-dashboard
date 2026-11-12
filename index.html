@@ -104,12 +104,17 @@
         <div class="row"><button id="demoBtn" class="btn ghost"></button><button id="refreshBtn" class="btn ghost">Refresh everything</button></div>
       </section>
       <section>
-        <h3>Home Assistant</h3>
+        <h3>Nest cameras &amp; thermostats</h3>
+        <p class="hint">Straight from Google, through the same script as your calendar. No extra device or app.</p>
+        <p class="hint" id="nestState"></p>
+      </section>
+      <section>
+        <h3>Home Assistant <small style="font-weight:600;opacity:.6">(optional: locks &amp; lights)</small></h3>
         <p class="hint">Your Home Assistant address (must start with <code>https://</code>) and a long-lived access token from your HA profile page.</p>
         <div class="row"><input id="haUrl" type="url" placeholder="https://xxxxxxxx.ui.nabu.casa" autocomplete="off" spellcheck="false"></div>
         <div class="row"><input id="haToken" type="password" placeholder="Long-lived access token" autocomplete="off" spellcheck="false"><button id="haSave" class="btn">Connect</button></div>
         <p class="hint" id="haState" style="margin-top:.6rem"></p>
-        <label class="line">Switch camera every <b id="camVal"></b> s<input id="camSec" type="range" min="5" max="30" step="1"></label>
+        <label class="line">Switch camera every <b id="camVal"></b> s<input id="camSec" type="range" min="5" max="120" step="5"></label>
         <p class="hint">Choose which devices show on the Home page:</p>
         <div id="haToggles"></div>
       </section>

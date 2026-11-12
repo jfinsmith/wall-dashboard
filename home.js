@@ -65,6 +65,58 @@ function haCall(domain, service, entity_id) {
   haSend({ type: 'call_service', domain, service, target: { entity_id } }, r => { if (!r.success) toast('Couldn’t change that: ' + (r.error?.message || 'error')); });
 }
 
+
+/* ---------------- Nest, direct from Google (through the calendar script; no hub needed) ---------------- */
+const NEST = { on: false, states: {}, error: null, pc: null, session: null, device: null, extT: null, gen: 0 };
+const f2 = c => c == null ? null : c * 9 / 5 + 32;
+async function nestPost(body) {
+  const r = await fetch(S.calUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
+  const j = await r.json(); if (j.error) throw new Error(j.error); return j;
+}
+async function fetchNest() {
+  if (!S.calUrl || S.demo) return;
+  let j; try { j = await nestPost({ nest: 'devices' }); } catch (e) { if (NEST.on) { NEST.error = e.message; renderHome(); } return; }
+  if (!j.nest) { NEST.on = false; return; }
+  const st = {};
+  (j.devices || []).forEach(d => {
+    const key = d.id.split('/').pop().slice(-12).toLowerCase();
+    if (d.protocols) st['camera.nest_' + key] = { entity_id: 'camera.nest_' + key, state: 'idle', nest: d.id, webrtc: d.protocols.includes('WEB_RTC'), attributes: { friendly_name: d.name } };
+    const t = d.thermostat;
+    if (t) {
+      const mode = { HEAT: 'heat', COOL: 'cool', HEATCOOL: 'heat_cool', OFF: 'off' }[t.mode] || 'off';
+      st['climate.nest_' + key] = { entity_id: 'climate.nest_' + key, state: t.online ? mode : 'unavailable', attributes: { friendly_name: d.name,
+        current_temperature: f2(t.c), current_humidity: t.humidity, hvac_action: { HEATING: 'heating', COOLING: 'cooling' }[t.hvac] || 'idle',
+        temperature: f2(mode === 'heat' ? t.heatC : t.coolC), target_temp_low: f2(t.heatC), target_temp_high: f2(t.coolC), preset_mode: t.eco === 'MANUAL_ECO' ? 'eco' : null } };
+    }
+  });
+  const first = !NEST.on; NEST.on = true; NEST.error = null; NEST.states = st;
+  renderHome(); if (first) { renderCam(); startCams(); renderHaSettings(); }
+}
+function nestStop() {
+  NEST.gen++; clearInterval(NEST.extT);
+  if (NEST.session) nestPost({ nest: 'stop', device: NEST.device, session: NEST.session }).catch(() => {});
+  try { NEST.pc && NEST.pc.close(); } catch {}
+  NEST.pc = NEST.session = NEST.device = null;
+}
+async function nestPlay(s, video, note) {
+  nestStop(); const gen = NEST.gen;
+  try {
+    const pc = NEST.pc = new RTCPeerConnection();
+    pc.addTransceiver('audio', { direction: 'recvonly' }); pc.addTransceiver('video', { direction: 'recvonly' }); pc.createDataChannel('dataSendChannel');
+    pc.ontrack = ev => { if (gen !== NEST.gen) return; video.srcObject = ev.streams[0] || new MediaStream([ev.track]); video.play().catch(() => {}); };
+    video.onplaying = () => { video.style.opacity = 1; };
+    await pc.setLocalDescription(await pc.createOffer());
+    await new Promise(res => { if (pc.iceGatheringState === 'complete') return res(); pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && res(); setTimeout(res, 4000); });
+    if (gen !== NEST.gen) return;
+    const j = await nestPost({ nest: 'offer', device: s.nest, sdp: pc.localDescription.sdp });
+    if (gen !== NEST.gen) { if (j.results?.mediaSessionId) nestPost({ nest: 'stop', device: s.nest, session: j.results.mediaSessionId }).catch(() => {}); return; }
+    NEST.device = s.nest; NEST.session = j.results.mediaSessionId;
+    await pc.setRemoteDescription({ type: 'answer', sdp: j.results.answerSdp });
+    NEST.extT = setInterval(() => nestPost({ nest: 'extend', device: NEST.device, session: NEST.session }).then(r => { if (r.results?.mediaSessionId) NEST.session = r.results.mediaSessionId; }).catch(() => {}), 4 * 60000);
+  } catch (e) { if (gen === NEST.gen) note.textContent = `${nameOf(s)}: ${/rate|quota|limit/i.test(e.message) ? 'Google is limiting how often cameras can switch; it will retry.' : e.message}`; }
+}
+const homePageVisible = () => document.visibilityState === 'visible' && Math.round(pager.scrollLeft / pager.clientWidth) === 1;
+
 /* ---------------- Sample data (shown until Home Assistant is connected) ---------------- */
 function demoCamImg(name, hue) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="hsl(${hue},45%,22%)"/><stop offset="1" stop-color="hsl(${hue + 30},35%,10%)"/></linearGradient></defs>
@@ -89,7 +141,8 @@ const DEMO = { states: {} };
    ['garage_l', 'Garage', 'off'], ['patio', 'Patio String Lights', 'off']]
     .forEach(([k, n, st, b, rgb]) => add('light.' + k, st, { friendly_name: n, brightness: b ? Math.round(b * 2.55) : null, rgb_color: rgb }));
 })();
-const homeStates = () => haConfigured() ? HA.states : DEMO.states;
+const homeLive = () => haConfigured() || NEST.on;
+const homeStates = () => !homeLive() ? DEMO.states : { ...(haConfigured() ? HA.states : {}), ...NEST.states };
 
 /* ---------------- Entity selection ---------------- */
 const nameOf = s => s.attributes?.friendly_name || s.entity_id.split('.')[1].replace(/_/g, ' ');
@@ -133,22 +186,24 @@ function thermoTile(s) {
 
 /* Cameras: rotate on a timer; refresh the visible snapshot every 3 s */
 let camIdx = 0, camRotT = null, camSnapT = null;
-function camList() { return byDomain('camera').filter(shown); }
+function camList() { return byDomain('camera').filter(shown).filter(s => !s.nest || s.webrtc); }
+const camEvery = () => Math.max(S.camSec, camList().some(s => s.nest) ? 30 : 5); // Google limits how often a Nest stream can start
 function camSrc(s) {
   const p = s.attributes?.entity_picture; if (!p) return null;
   return p.startsWith('data:') ? p : S.haUrl + p + (p.includes('?') ? '&' : '?') + '_=' + Date.now();
 }
 function renderCam() {
   const box = $('#cam'), cams = camList();
-  if (!cams.length) { box.innerHTML = `<div class="ph-img">${haConfigured() && HA.ok ? 'No cameras found in Home Assistant yet.' : 'Cameras will appear here.'}</div>`; return; }
+  if (!cams.length) { nestStop(); box.innerHTML = `<div class="ph-img">${homeLive() ? 'No cameras found yet.' : 'Cameras will appear here.'}</div>`; return; }
   camIdx %= cams.length; const s = cams[camIdx];
-  box.innerHTML = `<div class="ph-img">Loading ${esc(nameOf(s))}…</div><img alt="" id="camImg" style="opacity:0">
-    <div class="ov"><span class="ico">${svgI('cam')}</span><div><b>${esc(nameOf(s))}</b><span id="camWhen"><i class="live"></i>Live snapshot</span></div></div>
+  box.innerHTML = `<div class="ph-img">Loading ${esc(nameOf(s))}…</div>${s.nest ? '<video id="camImg" muted playsinline autoplay style="opacity:0"></video>' : '<img alt="" id="camImg" style="opacity:0">'}
+    <div class="ov"><span class="ico">${svgI('cam')}</span><div><b>${esc(nameOf(s))}</b><span id="camWhen"><i class="live"></i>${s.nest ? 'Live' : 'Live snapshot'}</span></div></div>
     <span class="cdots">${cams.map((_, i) => `<i class="${i === camIdx ? 'on' : ''}"></i>`).join('')}</span>`;
-  refreshSnap(true);
+  if (s.nest) { if (homePageVisible()) nestPlay(s, $('#camImg'), $('#cam .ph-img')); else { nestStop(); $('#cam .ph-img').textContent = nameOf(s); } }
+  else { nestStop(); refreshSnap(true); }
 }
 function refreshSnap(first) {
-  const cams = camList(), s = cams[camIdx % (cams.length || 1)], img = $('#camImg'); if (!s || !img) return;
+  const cams = camList(), s = cams[camIdx % (cams.length || 1)], img = $('#camImg'); if (!s || !img || s.nest) return;
   const src = camSrc(s); if (!src) { $('#cam .ph-img').textContent = 'No picture available for this camera.'; return; }
   const pre = new Image();
   pre.onload = () => { img.src = pre.src; img.style.opacity = 1; const w = $('#camWhen'); if (w) w.innerHTML = `<i class="live"></i>Updated ${tShort(new Date())}`; };
@@ -157,15 +212,17 @@ function refreshSnap(first) {
 }
 function startCams() {
   clearInterval(camRotT); clearInterval(camSnapT);
-  camRotT = setInterval(() => { camIdx++; renderCam(); }, S.camSec * 1000);
+  camRotT = setInterval(() => { if (camList().length > 1 && (homePageVisible() || !camList().some(s => s.nest))) { camIdx++; renderCam(); } }, camEvery() * 1000);
   camSnapT = setInterval(() => { if (document.visibilityState === 'visible') refreshSnap(false); }, 3000);
 }
 $('#cam').addEventListener('click', () => { camIdx++; renderCam(); startCams(); });
 
 function renderHome() {
   const banner = $('#haBanner');
-  banner.hidden = haConfigured() && !HA.error;
-  banner.textContent = !haConfigured() ? 'Sample devices · connect Home Assistant in ⚙️' : HA.error ? '⚠️ ' + HA.error : '';
+  const err = (haConfigured() && HA.error) || NEST.error;
+  banner.hidden = homeLive() && !err;
+  banner.textContent = !homeLive() ? 'Sample devices · connect your home in ⚙️' : err ? '⚠️ ' + err : '';
+  $('#home').classList.toggle('nest-only', NEST.on && !haConfigured());
   const locks = byDomain('lock').filter(shown), climate = byDomain('climate').filter(shown);
   const lights = byDomain('light', 'switch').filter(shown).sort((a, b) => (b.state === 'on') - (a.state === 'on'));
   $('#doors').innerHTML = locks.map(lockTile).join('') || '<div class="st" style="color:var(--faint)">No locks found.</div>';
@@ -202,7 +259,7 @@ function renderSide() {
   if (locks.length) rows.push(jam.length ? `<div class="sum"><i class="d bad"></i><b>${esc(jam.map(nameOf).join(', '))}</b> jammed</div>`
     : open.length ? `<div class="sum"><i class="d warn"></i><span><b>${esc(open.map(nameOf).join(', '))}</b> unlocked</span></div>`
     : `<div class="sum"><i class="d ok"></i><span>All doors locked</span></div>`);
-  rows.push(`<div class="sum"><i class="d ${nOn ? 'on' : ''}"></i><span>${nOn ? `<b>${nOn}</b> light${nOn > 1 ? 's' : ''} on` : 'All lights off'}</span></div>`);
+  if (byDomain('light', 'switch').filter(shown).length) rows.push(`<div class="sum"><i class="d ${nOn ? 'on' : ''}"></i><span>${nOn ? `<b>${nOn}</b> light${nOn > 1 ? 's' : ''} on` : 'All lights off'}</span></div>`);
   const t = climate.find(c => c.attributes?.current_temperature != null);
   if (t) { const act = t.attributes.hvac_action; rows.push(`<div class="sum"><i class="d ${act === 'heating' || act === 'cooling' ? 'on' : 'ok'}"></i><span>Inside <b>${Math.round(t.attributes.current_temperature)}°</b>${act === 'heating' ? ' · heating' : act === 'cooling' ? ' · cooling' : ''}</span></div>`); }
   $('#hSum').innerHTML = rows.join('');
@@ -215,9 +272,11 @@ function renderSide() {
 /* ---------------- Settings ---------------- */
 function renderHaSettings() {
   $('#haUrl').value = S.haUrl; $('#haToken').value = S.haToken; $('#camSec').value = S.camSec; $('#camVal').textContent = S.camSec;
+  $('#nestState').textContent = NEST.on ? `✅ Nest linked · ${Object.keys(NEST.states).filter(k => k.startsWith('camera.')).length} cameras, ${Object.keys(NEST.states).filter(k => k.startsWith('climate.')).length} thermostats${NEST.error ? ' · ⚠️ ' + NEST.error : ''}`
+    : S.calUrl ? 'Nest isn’t linked yet. Follow “Nest cameras” in the setup guide, then open your calendar address with ?nest=setup on the end.' : 'Connect the calendar first; Nest uses the same Google script.';
   $('#haState').textContent = !haConfigured() ? 'Not connected: the Home page is showing sample devices.'
     : HA.ok ? `✅ Connected · ${Object.keys(HA.states).length} entities` : HA.error ? '⚠️ ' + HA.error : 'Connecting…';
-  if (!haConfigured()) { $('#haToggles').innerHTML = ''; return; }
+  if (!homeLive()) { $('#haToggles').innerHTML = ''; return; }
   const groups = [['Cameras', 'camera'], ['Doors', 'lock'], ['Thermostats', 'climate'], ['Lights', 'light'], ['Switches (off by default)', 'switch']];
   $('#haToggles').innerHTML = groups.map(([label, dom]) => {
     const list = byDomain(dom); if (!list.length) return '';
@@ -237,6 +296,9 @@ $('#haSave').addEventListener('click', () => {
 $('#camSec').addEventListener('input', e => { S.camSec = +e.target.value; $('#camVal').textContent = S.camSec; saveSettings(); startCams(); });
 
 /* ---------------- Boot ---------------- */
-renderHome(); startCams(); haConnect();
+renderHome(); startCams(); haConnect(); fetchNest();
+setInterval(fetchNest, 2 * 60000);
+{ let was = false; const chk = () => { const v = homePageVisible(); if (v !== was) { was = v; if (camList()[camIdx % (camList().length || 1)]?.nest) renderCam(); } };
+  pager.addEventListener('scroll', () => { clearTimeout(chk.t); chk.t = setTimeout(chk, 250); }, { passive: true }); document.addEventListener('visibilitychange', chk); setTimeout(chk, 1500); }
 setInterval(renderSide, 5000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && haConfigured() && !HA.ok) haConnect(); });
