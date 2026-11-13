@@ -8,6 +8,7 @@
  */
 function doGet(e) {
   var p = (e && e.parameter) || {};
+  if (p.st === 'setup' || (p.code && String(p.state || '').indexOf('st-') === 0)) return stPage_(p);
   if (p.nest === 'setup' || p.code) return nestPage_(p);
   var days = Math.min(Number(p.days || 16), 60);   // days ahead
   var back = Math.min(Number(p.back || 0), 31);    // days back (earlier this week)
@@ -103,6 +104,7 @@ function sdm_(path, body) {
 /** The dashboard talks to Nest through here (POST with a small JSON body). */
 function doPost(e) {
   var q = {}; try { q = JSON.parse(e.postData.contents); } catch (err) {}
+  if (q.st) return stPost_(q);
   if (!nestReady_()) return json_({ nest: false });
   if (!props_().getProperty('NEST_REFRESH')) return json_({ nest: false, linked: false });
   try {
@@ -130,4 +132,90 @@ function doPost(e) {
     if (!cmd) return json_({ nest: true, error: 'unknown request' });
     return json_({ nest: true, results: sdm_(q.device + ':executeCommand', cmd).results || {} });
   } catch (err) { return json_({ nest: true, error: String(err.message || err) }); }
+}
+
+/* =====================================================================================
+ * Lights through Samsung SmartThings (optional). Fill in the two values below, deploy a
+ * new version, then open  <your /exec URL>?st=setup  once to approve access.
+ * ===================================================================================== */
+var ST = {
+  clientId: '',      // from the SmartThings app registration
+  clientSecret: ''
+};
+var ST_API = 'https://api.smartthings.com/';
+function stReady_() { return ST.clientId && ST.clientSecret; }
+function stAuthHeader_() { return { Authorization: 'Basic ' + Utilities.base64Encode(ST.clientId + ':' + ST.clientSecret) }; }
+
+function stPage_(p) {
+  var url = ScriptApp.getService().getUrl();
+  if (!stReady_()) return HtmlService.createHtmlOutput('<h2>SmartThings isn\'t set up yet</h2><p>Fill in clientId and clientSecret in the ST section of the script, then deploy a new version.</p>');
+  if (p.code) {
+    if (p.state !== props_().getProperty('ST_STATE')) return HtmlService.createHtmlOutput('<h2>That sign-in link expired</h2><p>Open ?st=setup again.</p>');
+    var r = UrlFetchApp.fetch(ST_API + 'oauth/token', { method: 'post', muteHttpExceptions: true, headers: stAuthHeader_(),
+      payload: { grant_type: 'authorization_code', client_id: ST.clientId, code: p.code, redirect_uri: url } });
+    var t = JSON.parse(r.getContentText() || '{}');
+    if (!t.refresh_token) return HtmlService.createHtmlOutput('<h2>SmartThings didn\'t return a key</h2><pre>' + r.getContentText().replace(/</g, '&lt;') + '</pre>');
+    props_().setProperty('ST_REFRESH', t.refresh_token); props_().deleteProperty('ST_STATE');
+    CacheService.getScriptCache().put('st_at', t.access_token, 20 * 3600); CacheService.getScriptCache().remove('st_devs');
+    return HtmlService.createHtmlOutput('<h2>✅ SmartThings is linked</h2><p>Your lights will appear on the dashboard\'s Home page within a minute. You can close this tab.</p>');
+  }
+  var state = 'st-' + Utilities.getUuid(); props_().setProperty('ST_STATE', state);
+  var link = ST_API + 'oauth/authorize?response_type=code&client_id=' + encodeURIComponent(ST.clientId) + '&redirect_uri=' + encodeURIComponent(url) +
+    '&scope=' + encodeURIComponent('r:devices:* x:devices:*') + '&state=' + state;
+  return HtmlService.createHtmlOutput('<h2>Link SmartThings</h2><p><a target="_top" href="' + link + '" style="font-size:1.3em">Sign in with Samsung and approve →</a></p>' +
+    '<p>Status: ' + (props_().getProperty('ST_REFRESH') ? 'already linked (signing in again re-links)' : 'not linked yet') + '</p>');
+}
+
+function stToken_() {
+  var c = CacheService.getScriptCache(), at = c.get('st_at'); if (at) return at;
+  var lock = LockService.getScriptLock(); lock.waitLock(20000);   // refresh keys are single-use: only one refresh at a time
+  try {
+    at = c.get('st_at'); if (at) return at;
+    var rt = props_().getProperty('ST_REFRESH'); if (!rt) throw new Error('not_linked');
+    var r = UrlFetchApp.fetch(ST_API + 'oauth/token', { method: 'post', muteHttpExceptions: true, headers: stAuthHeader_(),
+      payload: { grant_type: 'refresh_token', client_id: ST.clientId, refresh_token: rt } });
+    var t = JSON.parse(r.getContentText() || '{}');
+    if (!t.access_token) throw new Error('SmartThings sign-in expired: open ?st=setup again');
+    if (t.refresh_token) props_().setProperty('ST_REFRESH', t.refresh_token);
+    c.put('st_at', t.access_token, 20 * 3600);
+    return t.access_token;
+  } finally { lock.releaseLock(); }
+}
+/** Keeps the SmartThings sign-in alive even if the dashboard is off for weeks. Run stKeepAliveInstall once from the editor (optional). */
+function stKeepAlive() { CacheService.getScriptCache().remove('st_at'); stToken_(); }
+function stKeepAliveInstall() { ScriptApp.newTrigger('stKeepAlive').timeBased().everyDays(7).create(); }
+
+function stPost_(q) {
+  if (!stReady_()) return json_({ st: false });
+  if (!props_().getProperty('ST_REFRESH')) return json_({ st: false, linked: false });
+  try {
+    var h = { Authorization: 'Bearer ' + stToken_() }, c = CacheService.getScriptCache();
+    if (q.st === 'devices') {
+      var devs = JSON.parse(c.get('st_devs') || 'null');
+      if (!devs) {
+        var r = UrlFetchApp.fetch(ST_API + 'v1/devices?capability=switch', { headers: h, muteHttpExceptions: true });
+        if (r.getResponseCode() >= 400) throw new Error('SmartThings error ' + r.getResponseCode());
+        devs = (JSON.parse(r.getContentText()).items || []).map(function (d) {
+          var caps = {}; (d.components || []).forEach(function (cm) { (cm.capabilities || []).forEach(function (k) { caps[k.id] = 1; }); });
+          return { id: d.deviceId, name: d.label || d.name, caps: caps };
+        }).filter(function (d) { // lights only: dimmable or colour, and not a TV or speaker
+          return (d.caps.switchLevel || d.caps.colorControl || d.caps.colorTemperature) && !d.caps.tvChannel && !d.caps.audioVolume && !d.caps.mediaPlayback;
+        }).map(function (d) { return { id: d.id, name: d.name }; });
+        c.put('st_devs', JSON.stringify(devs), 600);
+      }
+      var res = UrlFetchApp.fetchAll(devs.map(function (d) { return { url: ST_API + 'v1/devices/' + d.id + '/status', headers: h, muteHttpExceptions: true }; }));
+      return json_({ st: true, devices: devs.map(function (d, i) {
+        var m = {}; try { m = JSON.parse(res[i].getContentText()).components.main || {}; } catch (err) {}
+        var v = function (cap, attr) { return m[cap] && m[cap][attr] ? m[cap][attr].value : null; };
+        return { id: d.id, name: d.name, on: v('switch', 'switch') === 'on', level: v('switchLevel', 'level'), hue: v('colorControl', 'hue'), sat: v('colorControl', 'saturation'),
+          online: res[i].getResponseCode() < 400 && v('switch', 'switch') != null };
+      }) });
+    }
+    if (q.st === 'cmd' && /^[0-9a-f-]{36}$/i.test(q.device || '')) {
+      var r2 = UrlFetchApp.fetch(ST_API + 'v1/devices/' + q.device + '/commands', { method: 'post', contentType: 'application/json', headers: h, muteHttpExceptions: true,
+        payload: JSON.stringify({ commands: [{ component: 'main', capability: 'switch', command: q.on ? 'on' : 'off' }] }) });
+      return r2.getResponseCode() < 400 ? json_({ st: true, ok: true }) : json_({ st: true, error: 'SmartThings refused (' + r2.getResponseCode() + ')' });
+    }
+    return json_({ st: true, error: 'unknown request' });
+  } catch (err) { return json_({ st: true, error: String(err.message || err) }); }
 }

@@ -59,7 +59,8 @@ function haConnect() {
   };
 }
 function haCall(domain, service, entity_id) {
-  if (!haConfigured()) { // sample mode: flip locally
+  if (ST.states[entity_id]) return stToggle(ST.states[entity_id]);
+  if (!homeLive()) { // sample mode: flip locally
     const s = DEMO.states[entity_id]; if (s) s.state = s.state === 'on' ? 'off' : 'on'; renderHome(); return;
   }
   haSend({ type: 'call_service', domain, service, target: { entity_id } }, r => { if (!r.success) toast('Couldn’t change that: ' + (r.error?.message || 'error')); });
@@ -121,6 +122,28 @@ async function nestPlay(s, tile) {
     x.extT = setInterval(() => nestPost({ nest: 'extend', device: x.device, session: x.session }).then(r => { if (r.results?.mediaSessionId) x.session = r.results.mediaSessionId; }).catch(() => {}), 4 * 60000);
   } catch (e) { if (live()) { note.textContent = `${nameOf(s)}: ${/rate|quota|limit/i.test(e.message) ? 'Google is limiting requests; retrying shortly.' : e.message}`; retry(60000); } }
 }
+
+/* ---------------- Lights through Samsung SmartThings (same Google script) ---------------- */
+const ST = { on: false, states: {}, error: null };
+function hsv2rgb(h, s) { // SmartThings hue & saturation are 0–100
+  h = (h || 0) / 100 * 6; s = Math.min(1, (s || 0) / 100) * .75; const f = n => { const k = (n + h) % 6; return Math.round(255 * (1 - s * Math.max(0, Math.min(k, 4 - k, 1)))); };
+  return [f(5), f(3), f(1)];
+}
+async function fetchST() {
+  if (!S.calUrl || S.demo) return;
+  let j; try { j = await nestPost({ st: 'devices' }); } catch (e) { if (ST.on) { ST.error = e.message; renderHome(); } return; }
+  if (!j.st) { ST.on = false; return; }
+  const st = {};
+  (j.devices || []).forEach(d => { const id = 'light.st_' + d.id.replace(/-/g, '');
+    st[id] = { entity_id: id, st: d.id, state: !d.online ? 'unavailable' : d.on ? 'on' : 'off',
+      attributes: { friendly_name: d.name, brightness: d.level != null ? d.level * 2.55 : null, rgb_color: d.sat > 5 ? hsv2rgb(d.hue, d.sat) : [255, 214, 150] } }; });
+  const first = !ST.on; ST.on = true; ST.error = null; ST.states = st; renderHome(); if (first) renderHaSettings();
+}
+let stT = null;
+function stToggle(s) {
+  const on = s.state !== 'on'; s.state = on ? 'on' : 'off'; renderHome();
+  nestPost({ st: 'cmd', device: s.st, on }).catch(e => { toast('Couldn’t change that: ' + e.message); }).finally(() => { clearTimeout(stT); stT = setTimeout(fetchST, 2500); });
+}
 const homePageVisible = () => document.visibilityState === 'visible' && Math.round(pager.scrollLeft / pager.clientWidth) === 1;
 
 /* ---------------- Sample data (shown until Home Assistant is connected) ---------------- */
@@ -147,8 +170,8 @@ const DEMO = { states: {} };
    ['garage_l', 'Garage', 'off'], ['patio', 'Patio String Lights', 'off']]
     .forEach(([k, n, st, b, rgb]) => add('light.' + k, st, { friendly_name: n, brightness: b ? Math.round(b * 2.55) : null, rgb_color: rgb }));
 })();
-const homeLive = () => haConfigured() || NEST.on;
-const homeStates = () => !homeLive() ? DEMO.states : { ...(haConfigured() ? HA.states : {}), ...NEST.states };
+const homeLive = () => haConfigured() || NEST.on || ST.on;
+const homeStates = () => !homeLive() ? DEMO.states : { ...(haConfigured() ? HA.states : {}), ...NEST.states, ...ST.states };
 
 /* ---------------- Entity selection ---------------- */
 const nameOf = s => s.attributes?.friendly_name || s.entity_id.split('.')[1].replace(/_/g, ' ');
@@ -235,16 +258,17 @@ $('#cam').addEventListener('click', e => {
 
 function renderHome() {
   const banner = $('#haBanner');
-  const err = (haConfigured() && HA.error) || NEST.error;
+  const err = (haConfigured() && HA.error) || NEST.error || ST.error;
   banner.hidden = homeLive() && !err;
   banner.textContent = !homeLive() ? 'Sample devices · connect your home in ⚙️' : err ? '⚠️ ' + err : '';
-  $('#home').classList.toggle('nest-only', NEST.on && !haConfigured());
+  $('#home').classList.toggle('nest-only', (NEST.on || ST.on) && !haConfigured());
   const locks = byDomain('lock').filter(shown), climate = byDomain('climate').filter(shown);
   const lights = byDomain('light', 'switch').filter(shown).sort((a, b) => (b.state === 'on') - (a.state === 'on'));
   $('#doors').innerHTML = locks.map(lockTile).join('') || '<div class="st" style="color:var(--faint)">No locks found.</div>';
   $('#climate').innerHTML = climate.map(thermoTile).join('') || '<div class="st" style="color:var(--faint)">No thermostats found.</div>';
   $('#lights').innerHTML = lights.map(lightTile).join('') || '<div class="st" style="color:var(--faint)">No lights found.</div>';
   const nOn = lights.filter(l => l.state === 'on').length;
+  $('#home').classList.toggle('has-lights', lights.length > 0);
   $('#lightsOn').textContent = lights.length ? `${nOn} of ${lights.length} on` : '';
   if (camKey !== camList().map(s => s.entity_id).join() + '|' + homePageVisible()) renderCam();
   renderSide();
@@ -290,6 +314,7 @@ function renderHaSettings() {
   $('#haUrl').value = S.haUrl; $('#haToken').value = S.haToken;
   $('#nestState').textContent = NEST.on ? `✅ Nest linked · ${Object.keys(NEST.states).filter(k => k.startsWith('camera.')).length} cameras, ${Object.keys(NEST.states).filter(k => k.startsWith('climate.')).length} thermostats${NEST.error ? ' · ⚠️ ' + NEST.error : ''}`
     : S.calUrl ? 'Nest isn’t linked yet. Follow “Nest cameras” in the setup guide, then open your calendar address with ?nest=setup on the end.' : 'Connect the calendar first; Nest uses the same Google script.';
+  $('#stState').textContent = ST.on ? `✅ SmartThings linked · ${Object.keys(ST.states).length} lights${ST.error ? ' · ⚠️ ' + ST.error : ''}` : 'Lights (SmartThings): not linked yet.';
   $('#haState').textContent = !haConfigured() ? 'Not connected: the Home page is showing sample devices.'
     : HA.ok ? `✅ Connected · ${Object.keys(HA.states).length} entities` : HA.error ? '⚠️ ' + HA.error : 'Connecting…';
   if (!homeLive()) { $('#haToggles').innerHTML = ''; return; }
@@ -313,7 +338,8 @@ $('#haSave').addEventListener('click', () => {
 /* ---------------- Boot ---------------- */
 renderHome(); startCams(); haConnect(); fetchNest();
 setInterval(fetchNest, 2 * 60000);
-{ const chk = () => { if (camKey && camKey.split('|')[1] !== String(homePageVisible())) renderCam(); };
+fetchST(); setInterval(() => { if (homePageVisible()) fetchST(); }, 30000); setInterval(fetchST, 10 * 60000); // lights: often while the Home page shows, rarely otherwise
+{ const chk = () => { if (camKey && camKey.split('|')[1] !== String(homePageVisible())) { renderCam(); if (homePageVisible() && ST.on) fetchST(); } };
   pager.addEventListener('scroll', () => { clearTimeout(chk.t); chk.t = setTimeout(chk, 250); }, { passive: true }); document.addEventListener('visibilitychange', chk); setTimeout(chk, 1500); }
 setInterval(renderSide, 5000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && haConfigured() && !HA.ok) haConnect(); });

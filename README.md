@@ -10,3 +10,6 @@ The Home page can show live Nest camera video and thermostat readings straight f
 4. **Script**: paste the latest `Code.gs` into your Apps Script project, fill in `projectId`, `clientId` and `clientSecret` in the `NEST` block, then Deploy → Manage deployments → edit → New version (approve the new permissions).
 5. **Link**: open your `/exec` URL with `?nest=setup` on the end, sign in, and tick the cameras and thermostats to share.
 Older Nest cameras that only offer RTSP can't play in a web page and are skipped. Live video only runs while the Home page is on screen.
+
+## Lights through SmartThings (no hub needed)
+Link your light brands (WiZ etc.) in the SmartThings app, register an OAuth app with the SmartThings CLI (redirect URI = your `/exec` URL, scopes `r:devices:*` and `x:devices:*`), put its client ID and secret in the `ST` block of `Code.gs`, deploy a new version, then open `/exec?st=setup`.

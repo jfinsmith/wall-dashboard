@@ -343,3 +343,9 @@ body[data-tod="night"] .blob{opacity:.34}
 .ct{position:relative;border-radius:1rem;overflow:hidden;background:#0b0a1e;border:1px solid var(--line);min-height:0;cursor:pointer}
 .ct .cname{position:absolute;left:0;right:0;bottom:0;padding:1.4rem .8rem .5rem;font-size:.9rem;font-weight:800;background:linear-gradient(180deg,transparent,rgba(5,4,20,.75));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cam.solo .ct .cname{font-size:1.05rem;padding:2rem 1rem .8rem}
+
+/* Nest + lights (no Home Assistant) */
+.home.nest-only.has-lights{grid-template-areas:"cams cams" "climate lights";grid-template-columns:minmax(0,1fr) minmax(0,3fr);grid-template-rows:minmax(0,1fr) auto}
+.home.nest-only.has-lights .lights{display:flex;max-height:16.8rem}
+.home.nest-only.has-lights .climate .tiles{grid-template-columns:1fr}
+.home.nest-only.has-lights .lights .tiles{grid-template-columns:repeat(auto-fill,minmax(10.5rem,1fr))}
